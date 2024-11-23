@@ -78,15 +78,41 @@ df = pd.read_csv('df.csv')
 unseen_df = pd.read_csv('unseendf.csv')
 original_stadium = unseen_df['stadium'].copy() # Had some issues with the stadium column, so saving a copy for later
 
-# Date parsing
-training_date_format = '%m/%d/%y' # adjust dt formatting
-unseen_date_format = '%Y-%m-%d'    
+# Date parsing with format detection
+def parse_dates(df, date_columns):
+    for col in date_columns:
+        # Try to infer the format
+        sample_date = df[col].iloc[0]
+        if '-' in str(sample_date):  # YYYY-MM-DD format
+            date_format = '%Y-%m-%d'
+        else:  # MM/DD/YY format
+            date_format = '%m/%d/%y'
+        
+        try:
+            df[col] = pd.to_datetime(df[col], format=date_format)
+        except ValueError:
+            # If specific format fails, try automatic parsing
+            df[col] = pd.to_datetime(df[col])
+    return df
 
-df['date1'] = pd.to_datetime(df['date1'], format=training_date_format)
-df['date2'] = pd.to_datetime(df['date2'], format=training_date_format)
+# Apply date parsing to both dataframes
+date_columns = ['date1', 'date2']
+df = parse_dates(df, date_columns)
+unseen_df = parse_dates(unseen_df, date_columns)
 
-unseen_df['date1'] = pd.to_datetime(unseen_df['date1'], format=unseen_date_format)
-unseen_df['date2'] = pd.to_datetime(unseen_df['date2'], format=unseen_date_format)
+# Parse birthdates separately as they might have a different format
+try:
+    df['birthdate'] = pd.to_datetime(df['birthdate'])
+    unseen_df['birthdate'] = pd.to_datetime(unseen_df['birthdate'])
+except ValueError:
+    # If automatic parsing fails, try specific formats
+    for date_format in ['%Y-%m-%d', '%m/%d/%y']:
+        try:
+            df['birthdate'] = pd.to_datetime(df['birthdate'], format=date_format)
+            unseen_df['birthdate'] = pd.to_datetime(unseen_df['birthdate'], format=date_format)
+            break
+        except ValueError:
+            continue
 
 # Enhanced Feature Engineering
 # Design Decision:
@@ -102,12 +128,11 @@ unseen_df['date2'] = pd.to_datetime(unseen_df['date2'], format=unseen_date_forma
 # - The feature list includes the advanced features along with the encoded 'stadium' columns.
 
 def create_advanced_features(data, training=True):
-    date_format = training_date_format if training else unseen_date_format
-    data['age_days'] = (data['date1'] - pd.to_datetime(data['birthdate'], format=date_format)).dt.days
+    data['age_days'] = (data['date1'] - data['birthdate']).dt.days
     data['days_between_races'] = (data['date2'] - data['date1']).dt.days
     data['speed1'] = data['distance1'] / data['time1']
     data['avg_time_per_meter1'] = data['time1'] / data['distance1']
-    data['is_same_distance'] = (data['distance1'] == data['distance2']).astype(np.int8)  # Use int8 instead of int64
+    data['is_same_distance'] = (data['distance1'] == data['distance2']).astype(np.int8)
     data['is_same_trap'] = (data['trap1'] == data['trap2']).astype(np.int8)
     data['age_days_between_interaction'] = data['age_days'] * data['days_between_races']
     data['speed_distance_interaction'] = data['speed1'] * data['distance1']
